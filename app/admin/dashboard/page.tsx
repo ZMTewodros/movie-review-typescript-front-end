@@ -1,137 +1,172 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import api from "../../services/api";
+import React, { useEffect, useState } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import api from "../../services/api"; 
+import { isAxiosError } from "axios"; // Added for proper error typing
 
-type RecentUser = {
-  id: string | number;
-  name: string;
-  Role?: { name?: string };
-  createdAt?: string;
-};
+interface DashboardStats {
+  counts: {
+    users: number;
+    movies: number;
+    reviews: number;
+  };
+  recentUsers: Array<{
+    id: number;
+    name: string;
+    createdAt: string;
+    role?: { name: string };
+  }>;
+  movies: Array<{
+    id: number;
+    title: string;
+    avgRating: number;
+  }>;
+}
 
-type ChartData = {
-  name: string;
-  rating: number;
-};
-
-type Stats = {
-  movies: number;
-  users: number;
-  reviews: number;
-  avgRating: number;
-  recentUsers: RecentUser[];
-  ratingDist: ChartData[];
-};
-
-export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats>({
-    movies: 0,
-    users: 0,
-    reviews: 0,
-    avgRating: 0,
-    recentUsers: [],
-    ratingDist: []
-  });
+export default function Dashboard() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchStats() {
+    const fetchDashboardData = async () => {
       try {
-        const res = await api.get("/admin/stats");
-        const { counts, movies, recentUsers } = res.data;
-
-        const totalAvg =
-          movies.length > 0
-            ? movies.reduce(
-                (sum: number, m: { avgRating?: string | number }) =>
-                  sum + (typeof m.avgRating === "number" ? m.avgRating : parseFloat(m.avgRating || "0")),
-                0
-              ) / movies.length
-            : 0;
-
-        const chartData: ChartData[] = movies.map((m: { title: string; avgRating?: string | number }) => ({
-          name: m.title.substring(0, 10),
-          rating: typeof m.avgRating === "number" ? m.avgRating : parseFloat(m.avgRating || "0")
-        }));
-
-        setStats({
-          movies: counts.movies,
-          users: counts.users,
-          reviews: counts.reviews,
-          avgRating: totalAvg,
-          recentUsers: recentUsers as RecentUser[],
-          ratingDist: chartData
-        });
-      } catch (err) {
-        console.error("Dashboard fetch error", err);
+        setLoading(true);
+        const res = await api.get<DashboardStats>("/admin/stats");
+        setStats(res.data);
+        setError(null);
+      } catch (err: unknown) { // Use unknown instead of any
+        console.error("Error fetching stats:", err);
+        
+        // Proper Type Guarding for Axios Errors
+        if (isAxiosError(err)) {
+          setError(err.response?.data?.message || "Failed to fetch dashboard data");
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("An unexpected error occurred");
+        }
+      } finally {
+        setLoading(false);
       }
-    }
-    fetchStats();
+    };
+
+    fetchDashboardData();
   }, []);
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p className="text-gray-400 font-bold text-xs uppercase tracking-widest">Loading Analytics...</p>
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="p-8 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">
+        <p className="font-bold underline mb-2">Access Denied or Server Error</p>
+        <p className="text-sm">{error || "Data unavailable"}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="mt-6 text-xs bg-red-500 text-white px-6 py-3 rounded-lg font-bold shadow-lg hover:bg-red-600 transition-all active:scale-95"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-4">
-      <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">Movie Management Dashboard</h2>
-      
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-        <StatCard label="Total Movies" value={stats.movies} icon="🎬" />
-        <StatCard label="Total Users" value={stats.users} icon="👤" />
-        <StatCard label="Avg Rating" value={stats.avgRating} icon="⭐" />
-        <StatCard label="Total Reviews" value={stats.reviews} icon="👁️" />
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="flex flex-col">
+        <h2 className="text-3xl font-black text-gray-900 tracking-tight">Dashboard Overview</h2>
+        <p className="text-gray-500 font-medium text-sm">Real-time platform statistics</p>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-8">
-        <div className="flex-1 bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-          <h3 className="font-semibold mb-4 text-gray-700">Movie Rating Distribution</h3>
-          <div className="h-[250px] w-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard label="Total Movies" value={stats.counts.movies} icon="🎬" />
+        <StatCard label="Total Users" value={stats.counts.users} icon="👤" />
+        <StatCard 
+          label="Avg App Rating" 
+          value={stats.movies.length > 0 
+            ? (stats.movies.reduce((acc, m) => acc + (Number(m.avgRating) || 0), 0) / stats.movies.length).toFixed(1) 
+            : "0.0"
+          } 
+          icon="⭐" 
+        />
+        <StatCard label="Total Reviews" value={stats.counts.reviews} icon="👁️" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+          <h3 className="text-xs font-black text-gray-400 mb-8 uppercase tracking-[0.2em]">Movie Rating Distribution</h3>
+          <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.ratingDist}>
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
-                <YAxis domain={[0, 5]} stroke="#94a3b8" fontSize={12} />
-                <Tooltip cursor={{fill: '#f1f5f9'}} />
-                <Bar dataKey="rating" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+              <BarChart data={stats.movies}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <XAxis 
+                  dataKey="title" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  fontSize={10} 
+                  tick={{ fill: '#9ca3af', fontWeight: 'bold' }}
+                />
+                <YAxis axisLine={false} tickLine={false} fontSize={12} tick={{ fill: '#9ca3af' }} />
+                <Tooltip 
+                  cursor={{ fill: '#f9fafb' }} 
+                  contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                />
+                <Bar dataKey="avgRating" fill="#3b82f6" radius={[6, 6, 0, 0]} barSize={32} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="w-full md:w-80 bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-          <h3 className="font-semibold mb-4 text-gray-700">Recent Users</h3>
-          <ul className="space-y-4">
-            {stats.recentUsers.map((u: RecentUser) => (
-              <li key={u.id} className="flex items-center gap-3">
-                <span className="w-9 h-9 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 font-bold uppercase border border-blue-100 text-sm">
-                  {u.name?.[0]}
-                </span>
-                <div>
-                  <div className="font-medium text-gray-800 text-sm">{u.name}</div>
-                  <div className="text-[11px] text-gray-500 uppercase font-semibold">
-                    {u.Role?.name} • {u.createdAt?.slice(0, 10)}
-                  </div>
+        <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
+          <h3 className="text-xs font-black text-gray-400 mb-8 uppercase tracking-[0.2em]">Newest Members</h3>
+          <div className="space-y-6">
+            {stats.recentUsers.map((user) => (
+              <div key={user.id} className="flex items-center gap-4 group cursor-default">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center font-black shadow-sm group-hover:scale-110 transition-transform">
+                  {user.name[0].toUpperCase()}
                 </div>
-              </li>
+                <div>
+                  <p className="text-sm font-extrabold text-gray-800">{user.name}</p>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    {user.role?.name || 'User'} • {new Date(user.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
             ))}
-          </ul>
+            {stats.recentUsers.length === 0 && (
+              <div className="text-center py-10">
+                <p className="text-xs font-bold text-gray-300 italic">No recent registrations</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-type StatCardProps = {
+// Fixed StatCard with explicit props typing
+interface StatCardProps {
   label: string;
   value: string | number;
   icon: string;
-};
+}
 
 function StatCard({ label, value, icon }: StatCardProps) {
   return (
-    <div className="flex items-center gap-4 bg-white rounded-xl shadow-sm p-5 border border-gray-100">
-      <span className="text-3xl">{icon}</span>
+    <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+      <div className="text-4xl filter drop-shadow-sm">{icon}</div>
       <div>
-        <div className="font-bold text-xl text-gray-900">{value}</div>
-        <div className="text-gray-400 text-xs font-bold uppercase tracking-wider">{label}</div>
+        <p className="text-3xl font-black text-gray-900 tracking-tighter">{value}</p>
+        <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.15em] mt-1">{label}</p>
       </div>
     </div>
   );

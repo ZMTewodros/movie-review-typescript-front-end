@@ -1,5 +1,6 @@
 import { AuthProvider } from "./components/AuthProvider";
 import Navbar from "./components/Navbar"; // Assuming you have a Navbar
+import './globals.css';
 
 
 
@@ -15,7 +16,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased">
+      <body className="antialiased" suppressHydrationWarning={true}>
+
         <AuthProvider>
           <Navbar />
           <main className="min-h-screen bg-gray-50">

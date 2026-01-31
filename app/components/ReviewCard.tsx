@@ -1,114 +1,126 @@
 "use client";
+
 import React, { useState } from "react";
 import api from "../services/api";
 import { useAuth } from "./AuthProvider";
+import { Star, Edit3, X, Check, Loader2 } from "lucide-react";
 
-type Review = {
-  id: number | string;
-  rating: number;
-  comment: string;
-  user_id: number | string;
-  User?: { name?: string };
-};
-
-export default function ReviewCard({
-  review,
-  onUpdated,
-}: {
-  review: Review;
+interface ReviewProps {
+  review: {
+    id: string | number;
+    user_id: string | number;
+    rating: number;
+    comment: string;
+    createdAt?: string;
+    User?: {
+      name: string;
+    };
+  };
   onUpdated: () => void;
-}) {
+}
+
+export default function ReviewCard({ review, onUpdated }: ReviewProps) {
   const { user } = useAuth();
   const isOwner = user?.id === review.user_id;
-
+  
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({
-    rating: review.rating,
-    comment: review.comment,
-  });
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ rating: review.rating, comment: review.comment });
 
   const handleSave = async () => {
+    if (!form.comment.trim()) return;
+    setLoading(true);
     try {
       await api.put(`/reviews/${review.id}`, form);
       setEditing(false);
       onUpdated();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (err) {
-      alert("Failed to update review");
+      alert("Failed to update review. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow mb-4">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold uppercase border border-blue-200">
-          {review.User?.name ? review.User.name.charAt(0) : "U"}
-        </div>
-        <div>
-          <div className="font-bold text-gray-900 leading-tight">
-            {review.User?.name || "Anonymous User"}
+    <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+      {/* HEADER: USER INFO & ACTION */}
+      <div className="flex justify-between items-start mb-4">
+        <div className="flex gap-4 items-center">
+          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-2xl flex items-center justify-center font-black shadow-lg shadow-blue-100">
+            {review.User?.name?.[0] || "U"}
           </div>
-          <div className="text-xs text-gray-400">Verified Reviewer</div>
+          <div>
+            <p className="font-black text-gray-900 leading-tight">
+              {review.User?.name || "Anonymous User"}
+            </p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+              {review.createdAt ? new Date(review.createdAt).toLocaleDateString() : "Recently"}
+            </p>
+          </div>
         </div>
-      </div>
-      {editing ? (
-        <div className="mt-2 bg-white p-4 rounded-lg border border-gray-200">
-          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-            Update Rating
-          </label>
-          <select
-            value={form.rating}
-            onChange={(e) => setForm({ ...form, rating: Number(e.target.value) })}
-            className="border p-2 mb-3 rounded-md w-32"
+
+        {isOwner && !editing && (
+          <button 
+            onClick={() => setEditing(true)} 
+            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
           >
-            {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n}>
-                {n} Stars
-              </option>
-            ))}
-          </select>
-          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">
-            Update Comment
-          </label>
-          <textarea
-            value={form.comment}
-            onChange={(e) => setForm({ ...form, comment: e.target.value })}
-            className="w-full border p-3 mb-3 rounded-md min-h-[80px]"
+            <Edit3 size={18} />
+          </button>
+        )}
+      </div>
+
+      {/* RATING DISPLAY / SELECTOR */}
+      <div className="flex gap-1 mb-4">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button
+            key={star}
+            disabled={!editing}
+            onClick={() => setForm({ ...form, rating: star })}
+            className={`${editing ? "cursor-pointer scale-110 hover:scale-125" : "cursor-default"} transition-transform`}
+          >
+            <Star 
+              size={18} 
+              className={star <= (editing ? form.rating : review.rating) ? "text-yellow-400 fill-yellow-400" : "text-gray-200"} 
+            />
+          </button>
+        ))}
+      </div>
+
+      {/* CONTENT AREA */}
+      {editing ? (
+        <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+          <textarea 
+            className="w-full p-4 border-2 border-gray-100 rounded-2xl bg-gray-50 focus:border-blue-500 focus:bg-white outline-none transition-all text-gray-700 min-h-[100px] resize-none"
+            placeholder="Share your thoughts about the movie..."
+            value={form.comment} 
+            onChange={e => setForm({...form, comment: e.target.value})}
           />
           <div className="flex gap-2">
-            <button
-              onClick={handleSave}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-1 rounded font-medium"
+            <button 
+              onClick={handleSave} 
+              disabled={loading}
+              className="flex-1 bg-gray-900 text-white px-4 py-3 rounded-xl font-bold hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              Save
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+              Save Changes
             </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="bg-gray-200 text-gray-700 px-4 py-1 rounded"
+            <button 
+              onClick={() => { setEditing(false); setForm({ rating: review.rating, comment: review.comment }); }} 
+              disabled={loading}
+              className="bg-gray-100 text-gray-500 px-4 py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors"
             >
-              Cancel
+              <X size={18} />
             </button>
           </div>
         </div>
       ) : (
-        <>
-          <div className="flex items-center mb-2">
-            <span className="text-yellow-400 flex text-lg">
-              {"★".repeat(review.rating)}
-            </span>
-            <span className="text-gray-200 flex text-lg">
-              {"★".repeat(5 - review.rating)}
-            </span>
-          </div>
-          <div className="text-gray-700 leading-relaxed mb-3">{review.comment}</div>
-          {isOwner && (
-            <button
-              onClick={() => setEditing(true)}
-              className="text-blue-600 hover:text-blue-800 text-sm font-semibold flex items-center gap-1"
-            >
-              ✎ Edit Your Review
-            </button>
-          )}
-        </>
+        <div className="relative">
+          <span className="absolute -left-2 -top-2 text-4xl text-blue-100 font-serif leading-none">“</span>
+          <p className="text-gray-600 leading-relaxed font-medium pl-4">
+            {review.comment}
+          </p>
+        </div>
       )}
     </div>
   );
