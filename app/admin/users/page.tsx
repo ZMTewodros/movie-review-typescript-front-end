@@ -1,10 +1,13 @@
 "use client";
-import React, { useEffect, useState } from "react";
-import { Trash2, UserPlus, Shield, User as UserIcon, Loader2 } from "lucide-react";
 
-// 1. Define strict interfaces to replace 'any'
+import React, { useEffect, useState } from "react";
+import api from "../../services/api";
+import { Trash2, ShieldCheck, ArrowDownToLine } from "lucide-react";
+import { AxiosError } from "axios";
+
+const SUPER_ADMIN_EMAIL = "tewodrosayalew111@gmail.com";
+
 interface Role {
-  id: number;
   name: string;
 }
 
@@ -12,152 +15,208 @@ interface User {
   id: number;
   name: string;
   email: string;
-  roleId: number;
-  createdAt: string;
-  role?: Role; // Matches the { include: [Role] } from NestJS
+  role?: Role;
 }
 
-export default function UserManagement() {
+interface ApiErrorResponse {
+  message?: string;
+}
+
+export default function ManageUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Fetch users on component mount
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+
   useEffect(() => {
-    const fetchUsers = async (): Promise<void> => {
-      try {
-        const response = await fetch("http://localhost:5000/api/users");
-        if (!response.ok) throw new Error("Failed to fetch users from server.");
-        
-        const data: User[] = await response.json();
-        setUsers(data);
-      } catch (err) {
-        // Handle error without 'any'
-        setError(err instanceof Error ? err.message : "An unknown error occurred");
-      } finally {
-        setLoading(false);
-      }
-    };
+    try {
+      const stored = localStorage.getItem("user");
 
+      if (stored && stored !== "undefined") {
+        const parsed = JSON.parse(stored);
+
+        const email: string = parsed?.email?.toLowerCase().trim();
+        const role: string = parsed?.role?.toLowerCase();
+
+        setIsSuperAdmin(email === SUPER_ADMIN_EMAIL.toLowerCase());
+        setIsAdmin(role === "admin");
+      }
+    } catch (error) {
+      console.error("Error reading user from localStorage:", error);
+    }
+  }, []);
+
+  const fetchUsers = async (): Promise<void> => {
+    try {
+      setLoading(true);
+
+      const res = await api.get<User[]>("/users");
+
+      setUsers(res.data);
+    } catch (error) {
+      const err = error as AxiosError<ApiErrorResponse>;
+
+      alert(
+        err.response?.data?.message ||
+          "Error loading users"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchUsers();
   }, []);
 
-  // Handler for deleting a user
-  const handleDelete = async (id: number): Promise<void> => {
-    if (!confirm("Are you sure you want to delete this user?")) return;
+  const promote = async (id: number): Promise<void> => {
+    if (!isSuperAdmin) {
+      alert("Only super admin can promote users");
+      return;
+    }
+
+    if (!window.confirm("Promote this user to admin?")) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/users/${id}`, {
-        method: "DELETE",
-      });
+      await api.put(`/users/promote/${id}`);
+      // alert("User promoted successfully");
+      fetchUsers();
+    } catch (error) {
+      const err = error as AxiosError<ApiErrorResponse>;
+      alert(err.response?.data?.message || "Failed to promote user");
+    }
+  };
 
-      if (response.ok) {
-        // Update local state to remove the user without reloading the page
-        setUsers((prev) => prev.filter((user) => user.id !== id));
-      } else {
-        alert("Failed to delete user.");
-      }
-    } catch (err) {
-      console.error("Delete error:", err);
+  const demote = async (id: number): Promise<void> => {
+    if (!isSuperAdmin) {
+      alert("Only super admin can demote users");
+      return;
+    }
+
+    if (!window.confirm("Demote this admin to normal user?")) return;
+
+    try {
+      await api.put(`/users/demote/${id}`);
+      // alert("User demoted successfully");
+      fetchUsers();
+    } catch (error) {
+      const err = error as AxiosError<ApiErrorResponse>;
+      alert(err.response?.data?.message || "Failed to demote user");
+    }
+  };
+
+  const remove = async (id: number, email: string): Promise<void> => {
+    // BOTH admin and super admin can delete
+    if (!isAdmin && !isSuperAdmin) {
+      alert("Only admins can delete users");
+      return;
+    }
+
+    if (email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      alert("Cannot delete super admin");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete this user?")) return;
+
+    try {
+      await api.delete(`/users/${id}`);
+      // alert("User deleted successfully");
+      fetchUsers();
+    } catch (error) {
+      const err = error as AxiosError<ApiErrorResponse>;
+      alert(err.response?.data?.message || "Failed to delete user");
     }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center p-20 text-gray-500">
-        <Loader2 className="animate-spin mb-4" size={40} />
-        <p className="animate-pulse">Syncing with database...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-8 text-center text-red-500 bg-red-50 rounded-lg border border-red-200">
-        <p className="font-bold">Database Connection Error</p>
-        <p className="text-sm">{error}</p>
+      <div className="p-10 text-center text-gray-500">
+        Loading users...
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      {/* Header Section */}
-      <div className="p-6 border-b flex justify-between items-center bg-white">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800 tracking-tight">User Management</h2>
-          <p className="text-xs text-gray-400">Manage system access and roles</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="bg-blue-50 text-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
-            {users.length} Active Records
-          </span>
-        </div>
-      </div>
+    <div>
+      <h2 className="text-2xl font-bold mb-6">User Management</h2>
 
-      {/* Table Section */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-gray-50 text-[10px] uppercase text-gray-400 font-black tracking-widest border-b">
-            <tr>
-              <th className="px-6 py-4">Full Name</th>
-              <th className="px-6 py-4">Email Address</th>
-              <th className="px-6 py-4">Access Level</th>
-              <th className="px-6 py-4 text-center">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {users.map((u: User) => (
-              <tr key={u.id} className="hover:bg-blue-50/30 transition-colors group">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
-                      <UserIcon size={14} />
-                    </div>
-                    <span className="font-bold text-gray-800 text-sm">{u.name}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-gray-500 text-sm italic">{u.email}</td>
-                <td className="px-6 py-4">
+      <table className="w-full bg-white shadow rounded">
+        <thead>
+          <tr className="border-b bg-gray-50">
+            <th className="p-4 text-left">Name</th>
+            <th className="p-4 text-left">Email</th>
+            <th className="p-4 text-left">Role</th>
+            <th className="p-4 text-center">Actions</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {users.map((u: User) => {
+            const role = u.role?.name?.toLowerCase() || "user";
+
+            const isTargetSuper =
+              u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+
+            return (
+              <tr key={u.id} className="border-b hover:bg-gray-50">
+                <td className="p-4">{u.name}</td>
+                <td className="p-4">{u.email}</td>
+
+                <td className="p-4">
                   <span
-                    className={`text-[9px] font-black px-3 py-1 rounded-full flex items-center w-fit gap-1 shadow-sm ${
-                      u.role?.name.toLowerCase() === "admin" || u.roleId === 1
-                        ? "bg-purple-100 text-purple-600 border border-purple-200"
-                        : "bg-blue-100 text-blue-600 border border-blue-200"
+                    className={`px-3 py-1 text-xs font-bold rounded-full ${
+                      isTargetSuper
+                        ? "bg-purple-100 text-purple-700"
+                        : role === "admin"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-gray-100 text-gray-700"
                     }`}
                   >
-                    <Shield size={10} />
-                    {u.role?.name.toUpperCase() || (u.roleId === 1 ? "ADMIN" : "USER")}
+                    {isTargetSuper ? "SUPER ADMIN" : role.toUpperCase()}
                   </span>
                 </td>
-                <td className="px-6 py-4">
-                  <div className="flex justify-center gap-3 text-gray-400">
-                    <button 
-                      title="Edit Permissions"
-                      className="p-1.5 hover:bg-amber-50 hover:text-amber-500 rounded-md transition-all active:scale-90"
+
+                <td className="p-4 flex gap-3 justify-center">
+                  {/* ONLY SUPER ADMIN CAN PROMOTE */}
+                  {isSuperAdmin && role === "user" && (
+                    <button
+                      onClick={() => promote(u.id)}
+                      className="text-green-600 hover:scale-110 transition"
+                      title="Promote to Admin"
                     >
-                      <UserPlus size={16} />
+                      <ShieldCheck />
                     </button>
-                    <button 
-                      onClick={() => handleDelete(u.id)}
+                  )}
+
+                  {/* ONLY SUPER ADMIN CAN DEMOTE */}
+                  {isSuperAdmin && role === "admin" && !isTargetSuper && (
+                    <button
+                      onClick={() => demote(u.id)}
+                      className="text-yellow-600 hover:scale-110 transition"
+                      title="Demote to User"
+                    >
+                      <ArrowDownToLine />
+                    </button>
+                  )}
+
+                  {/* ADMIN OR SUPER ADMIN CAN DELETE */}
+                  {(isAdmin || isSuperAdmin) && !isTargetSuper && (
+                    <button
+                      onClick={() => remove(u.id, u.email)}
+                      className="text-red-600 hover:scale-110 transition"
                       title="Delete User"
-                      className="p-1.5 hover:bg-red-50 hover:text-red-500 rounded-md transition-all active:scale-90"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 />
                     </button>
-                  </div>
+                  )}
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      
-      {users.length === 0 && (
-        <div className="p-20 text-center text-gray-400 italic bg-gray-50/50">
-          No users found in the database.
-        </div>
-      )}
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
